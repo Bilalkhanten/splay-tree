@@ -1,62 +1,148 @@
 #include <iostream>
 #include <algorithm>
-#include <string>
-//#include <tkDecls.h>
+#include <vector>
+#include <stdio.h>
+#include <memory>
 
 template <typename T>
-class splay_tree
+class binary_tree
 {
 protected:
-	
 	struct node
 	{
 		T user_data;
-		size_t size;
-		node *parent;
-		node *left;
-		node *right;
+		std::shared_ptr<node> parent;
+		std::shared_ptr<node> left;
+		std::shared_ptr<node> right;
 		
-		node(T user_data)
-				: user_data(user_data)
-				, parent(nullptr)
-				, left(nullptr)
-				, right(nullptr)
-		{}
-		
-		node(T user_data, node* parent, node* left, node* right)
+		node(T const& user_data, std::shared_ptr<node> parent = std::shared_ptr<node>(nullptr), std::shared_ptr<node> left = std::shared_ptr<node>(nullptr),
+		     std::shared_ptr<node> right = std::shared_ptr<node>(nullptr))
 				: user_data(user_data)
 				, parent(parent)
 				, left(left)
 				, right(right)
 		{}
 		
-		bool is_leaf()
+		bool is_leaf() const
 		{
 			return !left && !right;
 		}
 		
-		bool is_root()
+		bool is_root() const
 		{
-			return parent == nullptr;
+			return parent == std::shared_ptr<node>(nullptr);
 		}
 		
-		bool is_left_son()
+		bool is_left_son() const
 		{
-			return is_root() ? false : parent->left == this;
+			return is_root() ? false : parent->left.get() == this;
 		}
 		
-		bool is_right_son()
+		bool is_right_son() const
 		{
 			return is_root() ? false : parent->right == this;
 		}
 		
-	}* root;
+	};
 	
-	void rotate_right(node* x)
+	std::shared_ptr<node> root;
+	
+	static std::shared_ptr<node> max_node(std::shared_ptr<node> x)
+	{
+		if (!x)
+			return std::shared_ptr<node>(nullptr);
+		std::shared_ptr<node> ans = x;
+		while (ans->right)
+		{
+			ans = ans->right;
+		}
+		return ans;
+	}
+	
+	static std::shared_ptr<node> min_node(std::shared_ptr<node> x)
+	{
+		if (!x)
+			return std::shared_ptr<node>(nullptr);
+		std::shared_ptr<node> ans = x;
+		while (ans->left)
+		{
+			ans = ans->left;
+		}
+		return ans;
+	}
+	
+	std::shared_ptr<node> insert(std::shared_ptr<node> current_node, std::shared_ptr<node> parent_node, std::shared_ptr<node> new_node)
+	{
+		if (!current_node)
+		{
+			new_node->parent = parent_node;
+			return new_node;
+		}
+		if (new_node->user_data < current_node->user_data)
+			current_node->left =  insert(current_node->left, current_node, new_node);
+		else
+			current_node->right = insert(current_node->right, current_node, new_node);
+		return current_node;
+	}
+	
+	std::shared_ptr<node> find_node(std::shared_ptr<node> current_node, T const& data)
+	{
+		if (!current_node)
+			return std::shared_ptr<node>(nullptr);
+		if (current_node->user_data == data)
+			return current_node;
+		if (data < current_node->user_data)
+			return find_node(current_node->left, data);
+		return find_node(current_node->right, data);
+	}
+	
+	static const T* get_data(std::shared_ptr<node> n)
+	{
+		return (n? &n->user_data : nullptr);
+	}
+	
+	void print(std::shared_ptr<node> cur) const
+	{
+		if (!cur)
+			return;
+		std::cout << "(";
+		print(cur->left);
+		std::cout << ") <- " << cur->user_data << "-> (";
+		print(cur->right);
+		std::cout << ")";
+	}
+
+public:
+	
+	virtual void insert(T const& new_data) = 0;
+	
+	virtual void erase(T const& old_data) = 0;
+	
+	virtual bool count(T const& data) = 0;
+	
+	virtual const T * next(T const& data) = 0;
+	
+	virtual const T * prev(T const& data) = 0;
+	
+	void print() const
+	{
+		print(root);
+	}
+	
+};
+
+template <typename T>
+class rotatable_tree : public binary_tree<T>
+{
+
+protected:
+	using node = typename binary_tree<T>::node;
+	
+	void rotate_right(std::shared_ptr<node> x)
 	{
 		if (x->is_root())
 			return;
-		node* p = x->parent;
+		std::shared_ptr<node> p = x->parent;
 		x->parent = p->parent;
 		if (x->parent)
 		{
@@ -65,18 +151,18 @@ protected:
 			else
 				x->parent->right = x;
 		}
-		node* x_r = x->right;
+		std::shared_ptr<node> x_r = x->right;
 		x->right = p, p->parent = x;
 		p->left = x_r;
 		if (x_r)
 			x_r->parent = p;
 	}
 	
-	void rotate_left(node* x)
+	void rotate_left(std::shared_ptr<node> x)
 	{
 		if (x->is_root())
 			return;
-		node* p = x->parent;
+		std::shared_ptr<node> p = x->parent;
 		x->parent = p->parent;
 		if (x->parent)
 		{
@@ -85,31 +171,48 @@ protected:
 			else
 				x->parent->right = x;
 		}
-		node* x_l = x->left;
+		std::shared_ptr<node> x_l = x->left;
 		x->left = p, p->parent = x;
 		p->right = x_l;
 		if (x_l)
 			x_l->parent = p;
 	}
 	
-	void zig(node* x)
-	{			
-		node* p = x->parent;
+};
+
+template <typename T>
+class splay_tree : public rotatable_tree<T>
+{
+private:
+	
+	using binary_tree<T>::root;
+	using node = typename binary_tree<T>::node;
+	using rotatable_tree<T>::rotate_right;
+	using rotatable_tree<T>::rotate_left;
+	using binary_tree<T>::min_node;
+	using binary_tree<T>::max_node;
+	using binary_tree<T>::insert;
+	using binary_tree<T>::find_node;
+	
+	bool zig(std::shared_ptr<node> x)
+	{
+		std::shared_ptr<node> p = x->parent;
 		if (!p->is_root())
-			return;
+			return false;
 		if (x->is_left_son())
 			rotate_right(x);
 		else
 			rotate_left(x);
+		return true;
 	}
 	
-	void zig_zig(node* x)
+	bool zig_zig(std::shared_ptr<node> x)
 	{
 		if (x->is_root())
-			return;
-		node* p = x->parent;
+			return false;
+		std::shared_ptr<node> p = x->parent;
 		if (p->is_root() || (x->is_left_son() != p->is_left_son()))
-			return;
+			return false;
 		if (x->is_left_son())
 		{
 			rotate_right(p);
@@ -120,219 +223,147 @@ protected:
 			rotate_left(p);
 			rotate_left(x);
 		}
+		return true;
 	}
 	
-	void zig_zag(node* x)
+	bool zig_zag(std::shared_ptr<node> x)
 	{
 		if (x->is_root())
-			return;
-		node *p = x->parent;
+			return false;
+		std::shared_ptr<node> p = x->parent;
 		if (p->is_root() || (x->is_left_son() == p->is_left_son()))
-			return;
+			return false;
 		if (x->is_left_son()) {
 			rotate_right(x);
 			rotate_left(x);
 		}
-		else 
+		else
 		{
 			rotate_left(x);
 			rotate_right(x);
 		}
+		return true;
 	}
 	
-	void splay(node* x)
+	void splay(std::shared_ptr<node> x)
 	{
 		if (!x)
+		{
+			root = std::shared_ptr<node>(nullptr);
 			return;
+		}
 		while (!x->is_root())
 		{
-			zig(x);
-			zig_zig(x);
-			zig_zag(x);
+			if (zig(x))
+				break;
+			if(zig_zig(x))
+				continue;
+			if(zig_zag(x))
+				continue;
 		}
 		root = x;
 	}
 	
-	node* insert(node* current_node, node* parent_node, node* new_node)
+	std::shared_ptr<node> merge(std::shared_ptr<node> left, std::shared_ptr<node> right)
 	{
-		if (!current_node) 
-		{
-			new_node->parent = parent_node;
-			return current_node = new_node;
-		}
-		if (new_node->user_data < current_node->user_data)
-			current_node->left =  insert(current_node->left, current_node, new_node);
-		else
-			current_node->right = insert(current_node->right, current_node, new_node);
-		return current_node;
-	}
-	
-	node* max_element(node* x)
-	{
-		if (!x)
-			return nullptr;
-		if (!x->right)
-			return x;
-		return max_element(x->right);
-	}
-
-	node* min_element(node* x)
-	{
-		if (!x)
-			return nullptr;
-		if (!x->left)
-			return x;
-		return min_element(x->left);
-	}
-	
-	node* merge(node* left, node* right)
-	{
-		left = max_element(left);
+		left = max_node(left);
 		splay(left);
-		left->right = right;
+		if (left)
+		{
+			left->right = right;
+			if (right)
+				right->parent = left;
+		}
+		else
+		{
+			left = right;
+			if (left)
+				left->parent = std::shared_ptr<node>(nullptr);
+		}
 		return left;
 	}
 	
-	node* find_node(node* current_node, T data)
+	void splay(T const& data)
 	{
-		if (!current_node)
-			return nullptr;
-		if (current_node->user_data == data)
-			return current_node;
-		if (data < current_node->user_data)
-			return find_node(current_node->left, data);
-		return find_node(current_node->right, data);
-	}
-	
-	T get_data(node* n)
-	{
-		return (n? n->user_data : (T) NULL);
-	}
-	
-	void print(node* cur)
-	{
-		if (!cur)
-			return;
-		
-		std::cout << "(";
-		print(cur->left);
-		std::cout << ") <- " << cur->user_data << "-> (";
-		print(cur->right);
-		std::cout << ")";
+		std::shared_ptr<node> answer = find_node(root, data);
+		if (answer)
+			splay(answer);
 	}
 
-private:
-	
-	node* find_and_splay(T data)
-	{
-		node* answer = find_node(root, data);
-		splay(answer);
-		return answer;
-	}
-	
 public:
+	using binary_tree<T>::print;
 	
 	splay_tree()
 	{
-		root = nullptr;
+		root = std::shared_ptr<node>(nullptr);
 	}
 	
-	void insert(T new_data)
+	void insert(T const& new_data) override 
 	{
 		if (count(new_data))
 			return;
-		node* new_node = new node(new_data);
-		root = insert(root, nullptr, new_node);
-		/*print();
-		std::cout << "\n";*/
+		node* new_n = new node(new_data);
+		std::shared_ptr<node> new_node(new_n);
+		root = insert(root, std::shared_ptr<node>(nullptr), new_node);
 		splay(new_node);
-		int tmp;
-		/*std::cin >> tmp;
-		print();*/
 	}
 	
-	void erase(T old_data)
+	void erase(T const& old_data) override
 	{
 		if (!count(old_data))
 			return;
-		node* node_to_delete = find_and_splay(old_data);
-		root = merge(node_to_delete->left, node_to_delete->right);
+		if (root->left)
+			root->left->parent = std::shared_ptr<node>(nullptr);
+		if (root->right)
+			root->right->parent = std::shared_ptr<node>(nullptr);
+		root = merge(root->left, root->right);
+		if (root)
+			root->parent = std::shared_ptr<node>(nullptr);
+		
 	}
 	
-	bool count(T data)
+	bool count(T const& data) override
 	{
-		return find_and_splay(data) != nullptr;
+		splay(data);
+		return root && root->user_data == data;
 	}
 	
-	size_t size()
-	{
-		return root->size;
-	}
 	
-	T next(T data)
+	const T* next(T const& data) override
 	{
 		bool should_erase = false;
-		if (!count(data))
-			insert(data), should_erase = true;
-		T answer = get_data(min_element(root->right));
+		if (!count(data)) {
+			insert(data);
+			should_erase = true;
+		}
+		const T* answer = binary_tree<T>::get_data(min_node(root->right));
 		if (should_erase)
 			erase(data);
 		return answer;
 	}
 	
-	T prev(T data)
+	const T* prev(T const& data) override
 	{
 		bool should_erase = false;
 		if (!count(data))
 			insert(data), should_erase = true;
-		node* prev_node = root->left;
-		prev_node = max_element(prev_node);
-		T answer = get_data(prev_node);
+		const T* answer = binary_tree<T>::get_data(max_node(root->left));
 		if (should_erase)
 			erase(data);
 		return answer;
 	}
-	
-	void print()
-	{
-		print(root);
-		std::cout << '\n';
-	}
-	
-	void rotate_left(T key)
-	{
-		node* cur = find_node(root, key);
-		rotate_left(cur);
-	}
-	
-	void rotate_right(T key)
-	{
-		node* cur = find_node(root, key);
-		rotate_right(cur);
-	}
-	
-	void ins(T new_data)
-	{
-		if (count(new_data))
-			return;
-		node* new_node = new node(new_data);
-		root = insert(root, nullptr, new node(new_data));
-	}
-	
-	void splay(T key)
-	{
-		splay(find_node(root, key));
-	}
-	
 };
 
 int main()
 {
-	splay_tree<int> splay = *new splay_tree<int>();
+	splay_tree<int> splay;
 	std::string cmd;
 	
-	while (std::cin >> cmd)
-	{
+	while (std::cin >> cmd) {
+		if (cmd == "print") {
+			splay.print();
+			continue;
+		}
 		int x;
 		std::cin >> x;
 		if (cmd == "insert")
@@ -341,31 +372,20 @@ int main()
 			splay.erase(x);
 		if (cmd == "exists")
 			std::cout << (splay.count(x) ? "true\n" : "false\n");
-		if (cmd == "next")
-		{
-			int answer = splay.next(x);
-			if (!answer)
-				std::cout << answer << '\n';
+		if (cmd == "next") {
+			const int *answer = splay.next(x);
+			if (answer)
+				std::cout << *answer << '\n';
 			else
 				std::cout << "none\n";
 		}
-		if (cmd == "prev")
-		{
-			int answer = splay.prev(x);
-			if (!answer)
-				std::cout << answer << '\n';
+		if (cmd == "prev") {
+			const int *answer = splay.prev(x);
+			if (answer)
+				std::cout << *answer << '\n';
 			else
 				std::cout << "none\n";
 		}
-		if (cmd == "print")
-			splay.print();
-		if (cmd == "rotate_left")
-			splay.rotate_left(x);
-		if (cmd == "rotate_right")
-			splay.rotate_right(x);
-		if (cmd == "ins")
-			splay.ins(x);
-		
 	}
 	return 0;
 }
@@ -381,14 +401,6 @@ prev 4
 delete 5
 next 4
 prev 4
- 
-insert 2
-insert 5
-insert 3
-print 0
-ins 4
-print 0
-splay 4
 */
 
 
